@@ -9,7 +9,7 @@ Only `bugfix-2.1.x` is built, always from its latest commit. Release versions of
 **You need a free [GitHub account](https://github.com/signup) to request a build**, because
 each request is a GitHub issue and the download link is posted as a reply to it.
 
-**[Open the configuration picker](https://ellensp.github.io/MarlinWebBuild/)**
+**[Open the configuration picker](https://marlinfirmware.github.io/MarlinWebBuild/)**
 
 1. Sign in to GitHub, then find your printer and pick a build environment.
 2. Click **Request build on GitHub** and submit the pre-filled issue.

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        The easiest way to fill this in is from the [configuration picker](https://ellensp.github.io/MarlinWebBuild/).
+        The easiest way to fill this in is from the [configuration picker](https://marlinfirmware.github.io/MarlinWebBuild/).
         A bot will reply here with a download link in a few minutes.
   - type: input
     id: config

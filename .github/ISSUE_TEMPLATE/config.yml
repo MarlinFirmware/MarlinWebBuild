@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Configuration picker
-    url: https://ellensp.github.io/MarlinWebBuild/
+    url: https://marlinfirmware.github.io/MarlinWebBuild/
     about: Choose a printer and request a firmware build
