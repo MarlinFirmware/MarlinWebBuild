@@ -156,7 +156,10 @@ jobs:
           mkdir -p out/config
           for f in Configuration.h Configuration_adv.h _Bootscreen.h _Statusscreen.h; do
             src="cfg/config/examples/$CONFIG/$f"
-            [[ -f "$src" ]] && cp "$src" marlin/Marlin/ && cp "$src" out/config/
+            if [[ -f "$src" ]]; then
+              cp "$src" marlin/Marlin/
+              cp "$src" out/config/
+            fi
           done
 
       - name: Build
