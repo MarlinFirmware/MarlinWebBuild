@@ -60,6 +60,8 @@ jobs:
         id: check
         env:
           VERSION: ${{ steps.parse.outputs.version }}
+          MARLIN_REF: ${{ steps.parse.outputs.marlin_ref }}
+          CONFIGS_REF: ${{ steps.parse.outputs.configs_ref }}
           CONFIG: ${{ steps.parse.outputs.config }}
           REQ_ENV: ${{ steps.parse.outputs.env }}
           OWNER: ${{ github.repository_owner }}
@@ -77,10 +79,9 @@ jobs:
             (( N > DAILY_LIMIT )) && reject "Sorry, there's a limit of $DAILY_LIMIT build requests per day. Please try again tomorrow."
           fi
 
-          # Version name was checked by parse_request.py. Map it to a Marlin tag or branch
-          # and the matching Configurations branch (release-<tag> for a release).
-          read -r MARLIN_REF CONFIGS_REF < <(python3 tools/versions.py refs "$VERSION")
-          RELEASE=true; [[ $MARLIN_REF == "$CONFIGS_REF" ]] && RELEASE=false
+          # parse_request.py checked the version and looked up its Marlin tag or branch
+          # and its Configurations ref (see tools/versions.py).
+          RELEASE=true; [[ $VERSION == bugfix-* ]] && RELEASE=false
 
           # Fetch just enough of both repos to validate the request
           git clone -q --depth 1 --filter=blob:none --sparse -b "$MARLIN_REF" "https://github.com/$MARLIN_REPO" _marlin \
@@ -290,7 +291,7 @@ jobs:
               echo
               if [[ $RELEASE == true ]]; then
                 echo "\`$CONFIG\` did not compile for \`$PIO_ENV\` with Marlin \`$VERSION\`."
-                echo "Older releases may not build with today's PlatformIO tools. Try a newer release or bugfix-2.1.x."
+                echo "Some older example configurations don't build. Try a newer release or bugfix-2.1.x."
               else
                 echo "\`$CONFIG\` did not compile for \`$PIO_ENV\` on today's bugfix-2.1.x."
               fi

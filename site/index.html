@@ -150,7 +150,7 @@
     if (!data.release) return `<div class="warn"><b>Latest code.</b> bugfix-2.1.x has all the latest fixes and is often more stable than the last release,
       but it changes daily and a recent change can introduce a new bug. Check the configuration matches your printer before flashing.</div>`;
     return `<div class="warn"><b>Release ${esc(data.version)}.</b> Releases don't get fixes after they're published,
-      so bugs fixed since then are still in this firmware. Older releases may also fail to build with today's tools.
+      so bugs fixed since then are still in this firmware.
       Check the configuration matches your printer before flashing.</div>`;
   }
 
@@ -196,7 +196,7 @@
         for (const it of data.items) it._hay = norm(`${it.path} ${it.board || ''}`);
         $('ver').value = data.version;
         $('ver-hint').textContent = data.release
-          ? `Release ${data.version}, built from tag ${data.version}.`
+          ? `Latest patch release of Marlin ${data.series}, built from tag ${data.version}.`
           : 'Latest code, rebuilt from the newest commit for every request.';
         $('footer').innerHTML = `Index for Marlin ${esc(data.version)} built ${esc(data.generated.replace('T', ' ').replace('Z', ' UTC'))} from
           Marlin <code><a href="https://github.com/MarlinFirmware/Marlin/commit/${esc(data.marlin)}">${esc(data.marlin.slice(0, 10))}</a></code> and

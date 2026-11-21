@@ -2,7 +2,7 @@
 """
 Parse a build-request issue body (GitHub issue form markdown) from $ISSUE_BODY.
 
-Writes version=..., config=... and env=... to $GITHUB_OUTPUT (or stdout), or exits non-zero
+Writes version=..., marlin_ref=..., configs_ref=..., config=... and env=... to $GITHUB_OUTPUT (or stdout), or exits non-zero
 with a message suitable for posting back to the user.
 """
 
@@ -36,9 +36,11 @@ def main():
     version = req.get('version', '').strip('` ') or versions.BUGFIX   # Older requests have no version
     if config.startswith('config/examples/'): config = config[len('config/examples/'):]
 
-    if not versions.is_valid(version):
-        sys.exit(f"`{version[:64]}` is not a Marlin version this builder offers. "
-                 f"Use `{versions.BUGFIX}` or a release from {'.'.join(map(str, versions.OLDEST))} on.")
+    offered = versions.available() if versions.looks_valid(version) else []
+    refs = versions.refs(version, offered)
+    if not refs:
+        names = ', '.join(f"`{v['version']}`" for v in offered) or f"`{versions.BUGFIX}` or the latest patch release of a series"
+        sys.exit(f"`{version[:64]}` is not a Marlin version this builder offers. Choose one of: {names}.")
     if not config:
         sys.exit("No configuration was given.")
     if len(config) > 200 or not PATH_RE.match(config) or any(p in ('.', '..') for p in config.split('/')):
@@ -48,7 +50,7 @@ def main():
 
     dest = os.environ.get('GITHUB_OUTPUT')
     with open(dest, 'a') if dest else sys.stdout as f:
-        f.write(f"version={version}\nconfig={config}\nenv={env}\n")
+        f.write(f"version={version}\nmarlin_ref={refs[0]}\nconfigs_ref={refs[1]}\nconfig={config}\nenv={env}\n")
 
 if __name__ == '__main__':
     main()

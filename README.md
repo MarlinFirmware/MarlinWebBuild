@@ -4,8 +4,9 @@ Build [Marlin](https://github.com/MarlinFirmware/Marlin) firmware for any of its
 [example configurations](https://github.com/MarlinFirmware/Configurations/tree/bugfix-2.1.x/config/examples),
 without installing a build environment.
 
-Choose **`bugfix-2.1.x`** (always built from its latest commit) or any Marlin release from **2.0.0** on,
-with the example configurations published for that release. Beta releases are not offered.
+Choose **`bugfix-2.1.x`** (always built from its latest commit) or the latest patch release of a
+Marlin series from **2.0.7** on (2.0.7.5, 2.0.8.7, … 2.1.2.10), with the example configurations published
+for that release. Older series and beta releases are not offered, since they don't build with PlatformIO 6.
 
 **You need a free [GitHub account](https://github.com/signup) to request a build**, because
 each request is a GitHub issue and the download link is posted as a reply to it.
@@ -17,7 +18,7 @@ each request is a GitHub issue and the download link is posted as a reply to it.
 3. A few minutes later the issue gets a reply with a download link.
 
 Downloads are kept for about two weeks. `bugfix-2.1.x` has the latest fixes and is often more stable than the last release, but it changes daily and recent changes can introduce new bugs.
-Releases don't get fixes once published, and the oldest ones may not build with today's PlatformIO tools.
+Releases don't get fixes once published.
 
 ## How it works
 
@@ -28,8 +29,8 @@ Releases don't get fixes once published, and the oldest ones may not build with 
 | `.github/ISSUE_TEMPLATE/build.yml` | Issue form the picker pre-fills (`?config=…&env=…`) |
 | `.github/workflows/build.yml` | On a `build-request` issue: validate, build with PlatformIO, upload a zip to the `builds` release, reply and close |
 | `.github/workflows/prune.yml` | Daily: delete release assets older than 14 days, lock old requests |
-| `.github/workflows/version-check.yml` | On demand: build one example per platform for a sample of versions, to see which still build |
-| `tools/versions.py` | Lists the offered versions: `bugfix-2.1.x`, plus each Marlin release tag (no betas) from 2.0.0 on that has a `release-<tag>` branch in Configurations |
+| `.github/workflows/version-check.yml` | On demand: build one example per platform for every offered version, to see which still build |
+| `tools/versions.py` | Lists the offered versions: `bugfix-2.1.x`, plus the newest tag of each Marlin series with an `lts-<series>` branch, from 2.0.7 on, and its Configurations ref |
 | `tools/build_site.py` | Writes `site/versions.json` and one `site/index/<version>.json` per version |
 | `tools/matrix.py` | Picks the builds for `version-check.yml` |
 | `tools/marlin_index.py` | Maps example configs to envs, using the same `pins.h` lookup as Marlin's `mfenvs` |

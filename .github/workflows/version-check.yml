@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
     inputs:
       versions:
-        description: '"sample", "all", or a space-separated list of versions'
-        default: sample
+        description: '"all", or a space-separated list of versions'
+        default: all
       python:
         description: Python version
         default: '3.12'
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v7
       - id: plan
         env:
-          VERSIONS: ${{ inputs.versions || 'sample' }}
+          VERSIONS: ${{ inputs.versions || 'all' }}
         run: |
           python3 tools/build_site.py site
           # VERSIONS is a word list on purpose

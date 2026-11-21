@@ -29,7 +29,7 @@ def fetch_pins(sha):
 
 def index_version(v, work):
     """Index the example configs of one version. Returns the index document."""
-    _, cfg_ref = versions.refs(v['version'])
+    cfg_ref = v['configs_ref']
     pins = fetch_pins(v['marlin'])
     cfg = Path(work) / 'cfg'
     run = lambda *a: subprocess.run(['git', *a], check=True, capture_output=True)
@@ -42,7 +42,7 @@ def index_version(v, work):
         board = marlin_index.board_of(d)
         items.append({'path': rel, 'board': board,
                       'envs': marlin_index.envs_for(None, board, pins) if board else []})
-    return {'version': v['version'], 'release': v['release'], 'configs_ref': cfg_ref,
+    return {'version': v['version'], 'release': v['release'], 'series': v.get('series'), 'configs_ref': cfg_ref,
             'marlin': v['marlin'], 'configs': configs_sha, 'items': items}
 
 def main():
@@ -81,7 +81,7 @@ def main():
     for doc in results:
         (site / 'index' / f"{doc['version']}.json").write_text(json.dumps(doc, separators=(',', ':')))
 
-    listing = [{'version': d['version'], 'release': d['release'], 'marlin': d['marlin'],
+    listing = [{'version': d['version'], 'release': d['release'], 'series': d['series'], 'marlin': d['marlin'],
                 'configs': d['configs'], 'count': len(d['items']), 'generated': d['generated']}
                for d in results]
     (site / 'versions.json').write_text(json.dumps({

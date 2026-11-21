@@ -12,7 +12,7 @@ body:
     id: version
     attributes:
       label: Marlin version
-      description: "`bugfix-2.1.x` for the latest code, or a release such as `2.1.2.7`. Releases from 2.0.0 on are available."
+      description: "`bugfix-2.1.x` for the latest code, or the latest patch release of a series, such as `2.1.2.10` or `2.0.9.12`. Series from 2.0.7 on are available."
       value: bugfix-2.1.x
     validations:
       required: true

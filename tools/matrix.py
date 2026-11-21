@@ -2,18 +2,14 @@
 """
 Pick test builds that show which Marlin versions still build with today's tools.
 
-  matrix.py <site_dir> [all | sample | VERSION ...]   -> GitHub Actions matrix JSON
+  matrix.py <site_dir> [all | VERSION ...]   -> GitHub Actions matrix JSON
 
-For each version, picks one example configuration per platform family, using
-its default env. "sample" (the default) takes the oldest and newest release of
-each x.y.z series plus bugfix. Needs the index files from build_site.py.
+For each offered version (all by default), picks one example configuration per
+platform family, using its default env. Needs the index files from build_site.py.
 """
 
 import json, re, sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))
-import versions
 
 FAMILIES = {
     'avr':     r'^(mega2560|megaatmega2560)$',
@@ -22,20 +18,9 @@ FAMILIES = {
     'lpc176x': r'^LPC176[89]$',
 }
 
-def series(v):
-    k = versions.parse(v)
-    return k[:3] if k else (v,)
-
 def pick_versions(listing, how):
     names = [v['version'] for v in listing]
-    if how == ['all']: return names
-    if how and how != ['sample']: return [n for n in names if n in how]
-    groups = {}
-    for n in names: groups.setdefault(series(n), []).append(n)   # listing is newest first
-    out = []
-    for g in groups.values():
-        out += [g[0]] if len(g) == 1 else [g[0], g[-1]]
-    return out
+    return names if how in ([], ['all']) else [n for n in names if n in how]
 
 def main(argv):
     if not argv: sys.exit(__doc__)
