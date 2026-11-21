@@ -1,5 +1,5 @@
 name: Firmware build request
-description: Build Marlin bugfix-2.1.x firmware from an example configuration
+description: Build Marlin firmware from an example configuration
 title: "Build: "
 labels: [build-request]
 body:
@@ -9,10 +9,18 @@ body:
         The easiest way to fill this in is from the [configuration picker](https://marlinfirmware.github.io/MarlinWebBuild/).
         A bot will reply here with a download link in a few minutes.
   - type: input
+    id: version
+    attributes:
+      label: Marlin version
+      description: "`bugfix-2.1.x` for the latest code, or a release such as `2.1.2.7`. Releases from 2.0.0 on are available."
+      value: bugfix-2.1.x
+    validations:
+      required: true
+  - type: input
     id: config
     attributes:
       label: Configuration
-      description: Folder under `config/examples` in MarlinFirmware/Configurations, e.g. `Creality/Ender-3/CrealityV422`
+      description: Folder under `config/examples` in MarlinFirmware/Configurations for that version, e.g. `Creality/Ender-3/CrealityV422`
     validations:
       required: true
   - type: input
@@ -25,5 +33,5 @@ body:
     attributes:
       label: Acknowledgement
       options:
-        - label: I understand bugfix-2.1.x is updated daily, so it has the latest fixes but may also contain recently introduced bugs.
+        - label: I understand bugfix-2.1.x is updated daily, so it has the latest fixes but may also contain recently introduced bugs, and that older releases don't get fixes.
           required: true

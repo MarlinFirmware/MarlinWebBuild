@@ -19,7 +19,7 @@ def board_of(config_dir: Path):
     m = MB_RE.search((config_dir / 'Configuration.h').read_text(errors='replace'))
     return m.group(1) if m else None
 
-def envs_for(marlin_root: Path, board: str, pins_lines=None):
+def envs_for(marlin_root, board, pins_lines=None):
     if pins_lines is None:
         pins_lines = (marlin_root / 'Marlin/src/pins/pins.h').read_text(errors='replace').splitlines()
     mb = re.compile(r'MB\(.*\b' + re.escape(board) + r'\b.*\)')

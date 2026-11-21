@@ -17,7 +17,6 @@ concurrency:
 env:
   MARLIN_REPO: MarlinFirmware/Marlin
   CONFIGS_REPO: MarlinFirmware/Configurations
-  BRANCH: bugfix-2.1.x
   DAILY_LIMIT: 5          # Build requests per user per 24h (repo owner exempt)
 
 jobs:
@@ -29,6 +28,8 @@ jobs:
       issues: write
     outputs:
       ok: ${{ steps.check.outputs.ok }}
+      version: ${{ steps.parse.outputs.version }}
+      release: ${{ steps.check.outputs.release }}
       config: ${{ steps.parse.outputs.config }}
       env: ${{ steps.check.outputs.env }}
       envs: ${{ steps.check.outputs.envs }}
@@ -58,6 +59,7 @@ jobs:
       - name: Validate and look up cache
         id: check
         env:
+          VERSION: ${{ steps.parse.outputs.version }}
           CONFIG: ${{ steps.parse.outputs.config }}
           REQ_ENV: ${{ steps.parse.outputs.env }}
           OWNER: ${{ github.repository_owner }}
@@ -75,15 +77,22 @@ jobs:
             (( N > DAILY_LIMIT )) && reject "Sorry, there's a limit of $DAILY_LIMIT build requests per day. Please try again tomorrow."
           fi
 
+          # Version name was checked by parse_request.py. Map it to a Marlin tag or branch
+          # and the matching Configurations branch (release-<tag> for a release).
+          read -r MARLIN_REF CONFIGS_REF < <(python3 tools/versions.py refs "$VERSION")
+          RELEASE=true; [[ $MARLIN_REF == "$CONFIGS_REF" ]] && RELEASE=false
+
           # Fetch just enough of both repos to validate the request
-          git clone -q --depth 1 --filter=blob:none --sparse -b "$BRANCH" "https://github.com/$MARLIN_REPO" _marlin
+          git clone -q --depth 1 --filter=blob:none --sparse -b "$MARLIN_REF" "https://github.com/$MARLIN_REPO" _marlin \
+            || reject "Sorry, Marlin \`$VERSION\` wasn't found."
           git -C _marlin sparse-checkout set Marlin/src/pins
-          git clone -q --depth 1 --filter=blob:none --sparse -b "$BRANCH" "https://github.com/$CONFIGS_REPO" _cfg
+          git clone -q --depth 1 --filter=blob:none --sparse -b "$CONFIGS_REF" "https://github.com/$CONFIGS_REPO" _cfg \
+            || reject "Sorry, there are no example configurations for Marlin \`$VERSION\`."
           git -C _cfg sparse-checkout set --no-cone "/config/examples/$CONFIG/*"
 
           ENVS=$(python3 tools/marlin_index.py envs _marlin _cfg "$CONFIG" 2>&1) \
-            || reject "Sorry, \`$CONFIG\` isn't a configuration I can build: $ENVS"
-          [[ -n $ENVS ]] || reject "Sorry, the board used by \`$CONFIG\` has no build environment in Marlin $BRANCH."
+            || reject "Sorry, \`$CONFIG\` isn't a configuration I can build for Marlin \`$VERSION\`: $ENVS"
+          [[ -n $ENVS ]] || reject "Sorry, the board used by \`$CONFIG\` has no build environment in Marlin \`$VERSION\`."
 
           ENV=${REQ_ENV:-$(head -n1 <<<"$ENVS")}
           grep -qx -- "$ENV" <<<"$ENVS" \
@@ -99,6 +108,7 @@ jobs:
 
           {
             echo "ok=true"
+            echo "release=$RELEASE"
             echo "env=$ENV"
             echo "envs=$(echo $ENVS)"
             echo "marlin_sha=$MARLIN_SHA"
@@ -107,7 +117,7 @@ jobs:
             echo "cached=$CACHED"
           } >> "$GITHUB_OUTPUT"
 
-          [[ $CACHED == true ]] || gh issue comment "$ISSUE" --body "Building \`$CONFIG\` for \`$ENV\` from Marlin $BRANCH (\`${MARLIN_SHA:0:10}\`). This usually takes a few minutes. [Watch the build]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+          [[ $CACHED == true ]] || gh issue comment "$ISSUE" --body "Building \`$CONFIG\` for \`$ENV\` from Marlin \`$VERSION\` (\`${MARLIN_SHA:0:10}\`). This usually takes a few minutes. [Watch the build]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
 
   build:
     needs: prepare
@@ -117,6 +127,8 @@ jobs:
     permissions:
       contents: read
     env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE: ${{ needs.prepare.outputs.release }}
       CONFIG: ${{ needs.prepare.outputs.config }}
       PIO_ENV: ${{ needs.prepare.outputs.env }}
       KEY: ${{ needs.prepare.outputs.key }}
@@ -126,6 +138,7 @@ jobs:
           repository: ${{ env.MARLIN_REPO }}
           ref: ${{ needs.prepare.outputs.marlin_sha }}
           path: marlin
+          persist-credentials: false
 
       - uses: actions/checkout@v7
         with:
@@ -133,6 +146,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.configs_sha }}
           path: cfg
           sparse-checkout: config/examples/${{ needs.prepare.outputs.config }}
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:
@@ -174,7 +188,16 @@ jobs:
           files=(marlin/.pio/build/"$PIO_ENV"/*.{bin,hex,srec,uf2})
           (( ${#files[@]} )) || { echo "No firmware files found"; ls -la "marlin/.pio/build/$PIO_ENV"; exit 1; }
           cp "${files[@]}" out/
+          if [[ $RELEASE == true ]]; then
+            NOTE="Marlin $VERSION is a release and no longer gets fixes. Before reporting
+          a bug, please check whether it still happens with bugfix-2.1.x."
+          else
+            NOTE="bugfix-2.1.x has the latest fixes, but recent changes can introduce
+          new bugs. If you find one, please report it to the Marlin project
+          with the details in this file."
+          fi
           cat > out/BUILD_INFO.txt <<EOF
+          Marlin version: $VERSION
           Configuration: $CONFIG
           Environment:   $PIO_ENV
           Marlin:        https://github.com/$MARLIN_REPO/commit/${{ needs.prepare.outputs.marlin_sha }}
@@ -185,9 +208,7 @@ jobs:
           (some boards only accept a specific file name). The config/ folder
           holds the configuration files this firmware was built from.
 
-          bugfix-2.1.x has the latest fixes, but recent changes can introduce
-          new bugs. If you find one, please report it to the Marlin project
-          with the details in this file.
+          $NOTE
           EOF
           (cd out && zip -r "../build-$KEY.zip" .)
 
@@ -216,6 +237,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       ISSUE: ${{ github.event.issue.number }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE: ${{ needs.prepare.outputs.release }}
       CONFIG: ${{ needs.prepare.outputs.config }}
       PIO_ENV: ${{ needs.prepare.outputs.env }}
       ENVS: ${{ needs.prepare.outputs.envs }}
@@ -248,12 +271,16 @@ jobs:
               echo
               echo "**[Download $ASSET]($URL)**"
               echo
-              echo "Configuration \`$CONFIG\`, environment \`$PIO_ENV\`."
+              echo "Marlin \`$VERSION\`, configuration \`$CONFIG\`, environment \`$PIO_ENV\`."
               echo "The zip holds the firmware file(s), the configuration used and \`BUILD_INFO.txt\`."
               echo "Copy the firmware file to the SD card **without renaming it**."
               [[ -n $OTHERS ]] && echo && echo "If this doesn't boot on your board, try another environment: $OTHERS"
               echo
-              echo "> bugfix-2.1.x has the latest fixes, but recent changes can introduce new bugs. This download expires after about two weeks."
+              if [[ $RELEASE == true ]]; then
+                echo "> Marlin $VERSION is a release and no longer gets fixes. This download expires after about two weeks."
+              else
+                echo "> bugfix-2.1.x has the latest fixes, but recent changes can introduce new bugs. This download expires after about two weeks."
+              fi
             } > reply.md
             gh issue comment "$ISSUE" --body-file reply.md
             gh issue close "$ISSUE" --reason completed
@@ -261,7 +288,12 @@ jobs:
             {
               echo "### :x: Build failed"
               echo
-              echo "\`$CONFIG\` did not compile for \`$PIO_ENV\` on today's bugfix-2.1.x."
+              if [[ $RELEASE == true ]]; then
+                echo "\`$CONFIG\` did not compile for \`$PIO_ENV\` with Marlin \`$VERSION\`."
+                echo "Older releases may not build with today's PlatformIO tools. Try a newer release or bugfix-2.1.x."
+              else
+                echo "\`$CONFIG\` did not compile for \`$PIO_ENV\` on today's bugfix-2.1.x."
+              fi
               echo "This is usually a problem in Marlin or the example configuration, not something you did."
               echo
               if [[ -f build.log ]]; then

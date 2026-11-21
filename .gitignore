@@ -1,4 +1,6 @@
-site/index.json
+site/index/
+site/versions.json
+_site/
 _marlin/
 _cfg/
 __pycache__/
