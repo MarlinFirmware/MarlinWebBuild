@@ -100,7 +100,7 @@ jobs:
           ROW: ${{ toJSON(matrix) }}
           NAME: ${{ matrix.version }}-${{ matrix.family }}
         run: |
-          ERR=$(grep -m1 -E '(error|Error)[: ]' build.log 2>/dev/null | cut -c1-200 || true)
+          ERR=$(grep -m1 -E '(error|Error|Exception)[: ]' build.log 2>/dev/null | cut -c1-200 || true)
           jq -n --argjson row "$ROW" --arg result "$RESULT" --arg err "$ERR" '$row + {result:$result, error:$err}' > "result-$NAME.json"
 
       - uses: actions/upload-artifact@v7

@@ -109,7 +109,6 @@
 
   const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm = s => s.toLowerCase().replace(/[-_/.()]+/g, ' ');
-  const isBeta = v => /-b\d+$/.test(v);
 
   // The version and selected config live in the URL (?v=2.1.2.7#Creality/Ender-3/...) so it can be shared
   function saveUrl() {
@@ -150,7 +149,7 @@
   function versionNote() {
     if (!data.release) return `<div class="warn"><b>Latest code.</b> bugfix-2.1.x has all the latest fixes and is often more stable than the last release,
       but it changes daily and a recent change can introduce a new bug. Check the configuration matches your printer before flashing.</div>`;
-    return `<div class="warn"><b>${isBeta(data.version) ? 'Beta release' : 'Release'} ${esc(data.version)}.</b> Releases don't get fixes after they're published,
+    return `<div class="warn"><b>Release ${esc(data.version)}.</b> Releases don't get fixes after they're published,
       so bugs fixed since then are still in this firmware. Older releases may also fail to build with today's tools.
       Check the configuration matches your printer before flashing.</div>`;
   }
@@ -218,9 +217,9 @@
     .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(j => {
       site = j;
-      const latest = site.versions.find(v => v.release && !isBeta(v.version));
+      const latest = site.versions.find(v => v.release);
       $('ver').innerHTML = site.versions.map(v => `<option value="${esc(v.version)}">${esc(v.version)}${
-        !v.release ? ' (latest code)' : v === latest ? ' (latest release)' : isBeta(v.version) ? ' (beta)' : ''}</option>`).join('');
+        !v.release ? ' (latest code)' : v === latest ? ' (latest release)' : ''}</option>`).join('');
       $('ver').disabled = false;
       $('ver').addEventListener('change', () => loadVersion($('ver').value, selected && selected.path));
       $('q').addEventListener('input', render);

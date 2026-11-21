@@ -5,7 +5,7 @@ Build [Marlin](https://github.com/MarlinFirmware/Marlin) firmware for any of its
 without installing a build environment.
 
 Choose **`bugfix-2.1.x`** (always built from its latest commit) or any Marlin release from **2.0.0** on,
-with the example configurations published for that release.
+with the example configurations published for that release. Beta releases are not offered.
 
 **You need a free [GitHub account](https://github.com/signup) to request a build**, because
 each request is a GitHub issue and the download link is posted as a reply to it.
@@ -29,7 +29,7 @@ Releases don't get fixes once published, and the oldest ones may not build with 
 | `.github/workflows/build.yml` | On a `build-request` issue: validate, build with PlatformIO, upload a zip to the `builds` release, reply and close |
 | `.github/workflows/prune.yml` | Daily: delete release assets older than 14 days, lock old requests |
 | `.github/workflows/version-check.yml` | On demand: build one example per platform for a sample of versions, to see which still build |
-| `tools/versions.py` | Lists the offered versions: `bugfix-2.1.x`, plus each Marlin tag from 2.0.0 on that has a `release-<tag>` branch in Configurations |
+| `tools/versions.py` | Lists the offered versions: `bugfix-2.1.x`, plus each Marlin release tag (no betas) from 2.0.0 on that has a `release-<tag>` branch in Configurations |
 | `tools/build_site.py` | Writes `site/versions.json` and one `site/index/<version>.json` per version |
 | `tools/matrix.py` | Picks the builds for `version-check.yml` |
 | `tools/marlin_index.py` | Maps example configs to envs, using the same `pins.h` lookup as Marlin's `mfenvs` |

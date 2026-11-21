@@ -4,6 +4,7 @@ Marlin versions offered by the builder.
 
 A version is either the bugfix branch or a Marlin release tag (2.0.0 or newer)
 that has a matching "release-<tag>" branch in MarlinFirmware/Configurations.
+Beta tags (e.g. 2.1.3-b1) are left out: they pin library branches that no longer exist.
 
   versions.py list              -> JSON list of buildable versions, newest first
   versions.py refs <version>    -> "marlin_ref configs_ref" for a valid version name
@@ -32,7 +33,7 @@ def parse(version):
 def is_valid(version):
     if version == BUGFIX: return True
     key = parse(version)
-    return key is not None and key[:3] >= OLDEST
+    return key is not None and key[:3] >= OLDEST and key[4] == 1   # No betas
 
 def refs(version):
     """Version name -> (Marlin ref, Configurations ref)."""
