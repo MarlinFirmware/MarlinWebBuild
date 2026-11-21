@@ -1,0 +1,133 @@
+#
+# Check which Marlin versions still build with today's tools.
+# Builds one example configuration per platform family for each version picked
+# (see tools/matrix.py) and writes a pass/fail table to the run summary.
+#
+name: Version check
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: '"all", or a space-separated list of versions'
+        default: all
+      python:
+        description: Python version
+        default: '3.12'
+  push:
+    branches: [version-selector]
+    paths: ['.github/workflows/version-check.yml', 'tools/matrix.py']
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: plan
+        env:
+          VERSIONS: ${{ inputs.versions || 'all' }}
+        run: |
+          python3 tools/build_site.py site
+          # VERSIONS is a word list on purpose
+          # shellcheck disable=SC2086
+          echo "matrix=$(python3 tools/matrix.py site $VERSIONS)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: ${{ matrix.version }} ${{ matrix.family }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: MarlinFirmware/Marlin
+          ref: ${{ matrix.marlin }}
+          path: marlin
+          persist-credentials: false
+
+      - uses: actions/checkout@v7
+        with:
+          repository: MarlinFirmware/Configurations
+          ref: ${{ matrix.configs }}
+          path: cfg
+          sparse-checkout: config/examples/${{ matrix.config }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ inputs.python || '3.12' }}
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ matrix.env }}-${{ hashFiles('marlin/platformio.ini', 'marlin/ini/*.ini') }}
+          restore-keys: |
+            pio-${{ matrix.env }}-
+            pio-
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Build
+        id: build
+        env:
+          CONFIG: ${{ matrix.config }}
+          PIO_ENV: ${{ matrix.env }}
+        run: |
+          for f in Configuration.h Configuration_adv.h _Bootscreen.h _Statusscreen.h; do
+            src="cfg/config/examples/$CONFIG/$f"
+            if [[ -f "$src" ]]; then cp "$src" marlin/Marlin/; fi
+          done
+          cd marlin
+          set -o pipefail
+          pio run -e "$PIO_ENV" 2>&1 | tee ../build.log
+
+      - name: Record result
+        if: always()
+        env:
+          RESULT: ${{ steps.build.outcome }}
+          ROW: ${{ toJSON(matrix) }}
+          NAME: ${{ matrix.version }}-${{ matrix.family }}
+        run: |
+          ERR=$(grep -m1 -E '(error|Error|Exception)[: ]' build.log 2>/dev/null | cut -c1-200 || true)
+          jq -n --argjson row "$ROW" --arg result "$RESULT" --arg err "$ERR" '$row + {result:$result, error:$err}' > "result-$NAME.json"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: result-${{ matrix.version }}-${{ matrix.family }}
+          path: result-*.json
+          retention-days: 7
+
+  summary:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: result-*
+          merge-multiple: true
+      - name: Summarize
+        run: |
+          jq -s . result-*.json > results.json
+          {
+            echo "| Version | Family | Env | Config | Result | First error |"
+            echo "|---|---|---|---|---|---|"
+            jq -r 'sort_by(.version, .family)[] | "| \(.version) | \(.family) | `\(.env)` | \(.config) | \(if .result == "success" then "✅" else "❌" end) | \(.error | gsub("\\|"; "\\\\|")) |"' results.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: results
+          path: results.json

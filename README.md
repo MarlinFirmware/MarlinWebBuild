@@ -1,31 +1,38 @@
 # Marlin Firmware Builder
 
-Build firmware from the [Marlin](https://github.com/MarlinFirmware/Marlin) **`bugfix-2.1.x`** branch
-for any of its [example configurations](https://github.com/MarlinFirmware/Configurations/tree/bugfix-2.1.x/config/examples),
+Build [Marlin](https://github.com/MarlinFirmware/Marlin) firmware for any of its
+[example configurations](https://github.com/MarlinFirmware/Configurations/tree/bugfix-2.1.x/config/examples),
 without installing a build environment.
 
-Only `bugfix-2.1.x` is built, always from its latest commit. Release versions of Marlin are not available here.
+Choose **`bugfix-2.1.x`** (always built from its latest commit) or the latest patch release of a
+Marlin series from **2.0.7** on (2.0.7.5, 2.0.8.7, … 2.1.2.10), with the example configurations published
+for that release. Older series and beta releases are not offered, since they don't build with PlatformIO 6.
 
 **You need a free [GitHub account](https://github.com/signup) to request a build**, because
 each request is a GitHub issue and the download link is posted as a reply to it.
 
 **[Open the configuration picker](https://marlinfirmware.github.io/MarlinWebBuild/)**
 
-1. Sign in to GitHub, then find your printer and pick a build environment.
+1. Sign in to GitHub, then pick a Marlin version, find your printer and pick a build environment.
 2. Click **Request build on GitHub** and submit the pre-filled issue.
 3. A few minutes later the issue gets a reply with a download link.
 
 Downloads are kept for about two weeks. `bugfix-2.1.x` has the latest fixes and is often more stable than the last release, but it changes daily and recent changes can introduce new bugs.
+Releases don't get fixes once published.
 
 ## How it works
 
 | Piece | What it does |
 |---|---|
 | `site/` | Static picker page, deployed to GitHub Pages |
-| `.github/workflows/pages.yml` | Every 6 hours, indexes all example configs and their PlatformIO envs, then redeploys the page |
+| `.github/workflows/pages.yml` | Every 6 hours, indexes the example configs and their PlatformIO envs for every version, then redeploys the page |
 | `.github/ISSUE_TEMPLATE/build.yml` | Issue form the picker pre-fills (`?config=…&env=…`) |
 | `.github/workflows/build.yml` | On a `build-request` issue: validate, build with PlatformIO, upload a zip to the `builds` release, reply and close |
 | `.github/workflows/prune.yml` | Daily: delete release assets older than 14 days, lock old requests |
+| `.github/workflows/version-check.yml` | On demand: build one example per platform for every offered version, to see which still build |
+| `tools/versions.py` | Lists the offered versions: `bugfix-2.1.x`, plus the newest tag of each Marlin series with an `lts-<series>` branch, from 2.0.7 on, and its Configurations ref |
+| `tools/build_site.py` | Writes `site/versions.json` and one `site/index/<version>.json` per version |
+| `tools/matrix.py` | Picks the builds for `version-check.yml` |
 | `tools/marlin_index.py` | Maps example configs to envs, using the same `pins.h` lookup as Marlin's `mfenvs` |
 | `tools/parse_request.py` | Parses and validates the issue form text |
 
@@ -44,10 +51,7 @@ Users are limited to `DAILY_LIMIT` requests per day (see `build.yml`); the repo 
 ## Testing locally
 
 ```sh
-git clone --depth 1 --filter=blob:none --sparse -b bugfix-2.1.x https://github.com/MarlinFirmware/Marlin _marlin
-git -C _marlin sparse-checkout set Marlin/src/pins
-git clone --depth 1 --filter=blob:none --sparse -b bugfix-2.1.x https://github.com/MarlinFirmware/Configurations _cfg
-git -C _cfg sparse-checkout set --no-cone '/config/examples/**/Configuration.h'
-python3 tools/marlin_index.py index _marlin _cfg | jq '{repo:"you/MarlinWebBuild",branch:"bugfix-2.1.x",marlin:"",configs:"",generated:"",items:.}' > site/index.json
+python3 tools/build_site.py site --repo you/MarlinWebBuild   # all versions, about 20 seconds
+python3 tools/build_site.py site --only bugfix-2.1.x 2.1.2.7  # or just a few
 python3 -m http.server -d site
 ```
