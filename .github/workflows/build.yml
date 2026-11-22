@@ -50,6 +50,8 @@ jobs:
       configs_sha: ${{ steps.check.outputs.configs_sha }}
       key: ${{ steps.check.outputs.key }}
       cached: ${{ steps.check.outputs.cached }}
+      prebuilt: ${{ steps.check.outputs.prebuilt }}
+      prebuilt_url: ${{ steps.check.outputs.prebuilt_url }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -155,6 +157,18 @@ jobs:
           CACHED=false
           gh release view builds --json assets --jq '.assets[].name' 2>/dev/null | grep -qx "build-$KEY.zip" && CACHED=true
 
+          # A stock example at a release may already be built in MarlinFirmware/MarlinBuilds:
+          # use that firmware instead of building it again (tools/prebuilt.py checks its SHA-256).
+          PREBUILT=false PREBUILT_URL=''
+          if [[ $CACHED != true && $MODE == example && $RELEASE == true ]]; then
+            if python3 tools/prebuilt.py "$VERSION" "$CONFIG" "$ENV" _prebuilt > prebuilt.json 2> err.txt; then
+              PREBUILT=true
+              PREBUILT_URL=$(jq -r .url prebuilt.json)
+            else
+              echo "Building instead: $(cat err.txt)"
+            fi
+          fi
+
           {
             echo "ok=true"
             echo "release=$RELEASE"
@@ -168,9 +182,11 @@ jobs:
             echo "configs_sha=$CONFIGS_SHA"
             echo "key=$KEY"
             echo "cached=$CACHED"
+            echo "prebuilt=$PREBUILT"
+            echo "prebuilt_url=$PREBUILT_URL"
           } >> "$GITHUB_OUTPUT"
 
-          if [[ $CACHED != true ]]; then
+          if [[ $CACHED != true && $PREBUILT != true ]]; then
             MSG="Building $WHAT for \`$ENV\` from Marlin \`$VERSION\` (\`${MARLIN_SHA:0:10}\`)."
             if [[ $MODE == upload ]]; then
               if [[ $MIGRATED == true ]]; then
@@ -181,6 +197,48 @@ jobs:
             fi
             gh issue comment "$ISSUE" --body "$MSG This usually takes a few minutes. [Watch the build]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
           fi
+
+      - name: Package prebuilt firmware
+        if: steps.check.outputs.prebuilt == 'true'
+        env:
+          VERSION: ${{ steps.parse.outputs.version }}
+          CONFIG: ${{ steps.parse.outputs.config }}
+          PIO_ENV: ${{ steps.check.outputs.env }}
+          KEY: ${{ steps.check.outputs.key }}
+          MARLIN_SHA: ${{ steps.check.outputs.marlin_sha }}
+          CONFIGS_SHA: ${{ steps.check.outputs.configs_sha }}
+          PREBUILT_URL: ${{ steps.check.outputs.prebuilt_url }}
+        run: |
+          mkdir -p out/config
+          cp _prebuilt/* out/
+          for f in Configuration.h Configuration_adv.h _Bootscreen.h _Statusscreen.h; do
+            if [[ -f "_cfg/config/examples/$CONFIG/$f" ]]; then cp "_cfg/config/examples/$CONFIG/$f" out/config/; fi
+          done
+          cat > out/BUILD_INFO.txt <<EOF
+          Marlin version: $VERSION
+          Configuration: $CONFIG
+          Configurations: https://github.com/$CONFIGS_REPO/tree/$CONFIGS_SHA/config/examples/${CONFIG// /%20}
+          Environment:   $PIO_ENV
+          Marlin:        https://github.com/$MARLIN_REPO/commit/$MARLIN_SHA
+          Firmware:      Published build from MarlinFirmware/MarlinBuilds, not rebuilt:
+                         $PREBUILT_URL
+          Packaged:      $(date -u +'%Y-%m-%d %H:%M UTC')
+
+          Copy the firmware file to the printer's SD card without renaming it
+          (some boards only accept a specific file name). The config/ folder
+          holds the example configuration files this firmware was built from.
+
+          Marlin $VERSION is a release and no longer gets fixes. Before reporting
+          a bug, please check whether it still happens with bugfix-2.1.x.
+          EOF
+          (cd out && zip -r "../build-$KEY.zip" .)
+
+      - uses: actions/upload-artifact@v7
+        if: steps.check.outputs.prebuilt == 'true'
+        with:
+          name: firmware
+          path: build-${{ steps.check.outputs.key }}.zip
+          retention-days: 1
 
       - name: Keep the uploaded configuration for the build
         if: steps.parse.outputs.mode == 'upload' && steps.check.outputs.cached != 'true'
@@ -198,7 +256,7 @@ jobs:
 
   build:
     needs: prepare
-    if: needs.prepare.outputs.ok == 'true' && needs.prepare.outputs.cached != 'true'
+    if: needs.prepare.outputs.ok == 'true' && needs.prepare.outputs.cached != 'true' && needs.prepare.outputs.prebuilt != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -362,11 +420,13 @@ jobs:
       MIGRATED: ${{ needs.prepare.outputs.migrated }}
       KEY: ${{ needs.prepare.outputs.key }}
       CACHED: ${{ needs.prepare.outputs.cached }}
+      PREBUILT: ${{ needs.prepare.outputs.prebuilt }}
+      PREBUILT_URL: ${{ needs.prepare.outputs.prebuilt_url }}
       BUILD_RESULT: ${{ needs.build.result }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/download-artifact@v8
-        if: needs.build.result != 'skipped'
+        if: needs.build.result != 'skipped' || needs.prepare.outputs.prebuilt == 'true'
         continue-on-error: true
         with:
           merge-multiple: true
@@ -387,7 +447,7 @@ jobs:
                 --notes "Firmware built on request. Files are removed after a couple of weeks."
           }
 
-          if [[ $CACHED == true || $BUILD_RESULT == success ]]; then
+          if [[ $CACHED == true || $PREBUILT == true || $BUILD_RESULT == success ]]; then
             if [[ $CACHED != true ]]; then
               ensure_release
               gh release upload builds "$ASSET" --clobber
@@ -399,6 +459,9 @@ jobs:
               echo
               echo "Marlin \`$VERSION\`, $WHAT, environment \`$PIO_ENV\`."
               echo "The zip holds the firmware file(s), the configuration used and \`BUILD_INFO.txt\`."
+              if [[ $PREBUILT == true ]]; then
+                echo "This firmware was already built for Marlin \`$VERSION\` and published in [MarlinBuilds]($PREBUILT_URL), so no new build was needed. Its checksum was verified."
+              fi
               if [[ $MODE == upload && $MIGRATED == true ]]; then
                 echo "Your files were migrated from Marlin \`$BASE\`: \`config/\` has the migrated files (keep these for next time),"
                 echo "\`original/\` has yours, and \`MIGRATION_REPORT.txt\` lists every change. Check the report before flashing."

@@ -49,9 +49,13 @@ Releases don't get fixes once published.
 | `tools/marlin_index.py` | Maps example configs to envs, using the same `pins.h` lookup as Marlin's `mfenvs` |
 | `tools/parse_request.py` | Parses and validates the issue form text |
 | `tools/user_config.py` | Downloads an attached zip, unpacks the config files and checks them (see above) |
+| `tools/prebuilt.py` | Fetches and checks an already-published firmware from MarlinBuilds for a release + example + env |
 | `tools/migrate_user.py` | Finds the stock version a configuration started from and migrates it to the target with Marlin's `config-migrate.py` |
 
 A build for the same Marlin commit, configuration folder (or uploaded files) and env is reused rather than rebuilt.
+A stock example at a release that's already published in [MarlinBuilds](https://github.com/MarlinFirmware/MarlinBuilds)
+(tag = Marlin version, `builds/<config>/<env>/`) isn't built at all: its firmware is checked against the published
+SHA-256 and zipped with the example's configuration files, and the reply says where it came from.
 Users are limited to `DAILY_LIMIT` requests per day (see `build.yml`); the repo owner is exempt.
 
 ## Setting up your own copy
