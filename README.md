@@ -17,6 +17,18 @@ each request is a GitHub issue and the download link is posted as a reply to it.
 2. Click **Request build on GitHub** and submit the pre-filled issue.
 3. A few minutes later the issue gets a reply with a download link.
 
+### Your own configuration
+
+Check **Supply your own configs** on the picker to build from your own `Configuration.h` and `Configuration_adv.h`.
+You zip them and drag the zip into the request on GitHub. Files from an older Marlin are migrated to the version you
+chose with Marlin's [`config-migrate.py`](https://github.com/MarlinFirmware/Marlin/blob/bugfix-2.1.x/buildroot/share/scripts/config-migrate.py),
+and the download includes the migrated files, your originals and a report of every change. Files from a newer Marlin
+than the one chosen are refused. **Attached files are public.**
+
+Uploaded files may only use `#define`-style preprocessor lines (`define`, `undef`, `if…endif`, `error`, `warning`,
+plus `#pragma once` and `#include <avr/pgmspace.h>`), with no `##`, `asm` or `_Pragma`, because a compiler can be told
+to read files from the build machine into the firmware. Every stock example passes these checks.
+
 Downloads are kept for about two weeks. `bugfix-2.1.x` has the latest fixes and is often more stable than the last release, but it changes daily and recent changes can introduce new bugs.
 Releases don't get fixes once published.
 
@@ -27,6 +39,7 @@ Releases don't get fixes once published.
 | `site/` | Static picker page, deployed to GitHub Pages |
 | `.github/workflows/pages.yml` | Every 6 hours, indexes the example configs and their PlatformIO envs for every version, then redeploys the page |
 | `.github/ISSUE_TEMPLATE/build.yml` | Issue form the picker pre-fills (`?config=…&env=…`) |
+| `.github/ISSUE_TEMPLATE/build-upload.yml` | Issue form for your own files: version, attached zip, optional env |
 | `.github/workflows/build.yml` | On a `build-request` issue: validate, build with PlatformIO, upload a zip to the `builds` release, reply and close |
 | `.github/workflows/prune.yml` | Daily: delete release assets older than 14 days, lock old requests |
 | `.github/workflows/version-check.yml` | On demand: build one example per platform for every offered version, to see which still build |
@@ -35,8 +48,10 @@ Releases don't get fixes once published.
 | `tools/matrix.py` | Picks the builds for `version-check.yml` |
 | `tools/marlin_index.py` | Maps example configs to envs, using the same `pins.h` lookup as Marlin's `mfenvs` |
 | `tools/parse_request.py` | Parses and validates the issue form text |
+| `tools/user_config.py` | Downloads an attached zip, unpacks the config files and checks them (see above) |
+| `tools/migrate_user.py` | Finds the stock version a configuration started from and migrates it to the target with Marlin's `config-migrate.py` |
 
-A build for the same Marlin commit, configuration folder and env is reused rather than rebuilt.
+A build for the same Marlin commit, configuration folder (or uploaded files) and env is reused rather than rebuilt.
 Users are limited to `DAILY_LIMIT` requests per day (see `build.yml`); the repo owner is exempt.
 
 ## Setting up your own copy

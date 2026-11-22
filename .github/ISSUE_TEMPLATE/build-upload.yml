@@ -1,0 +1,46 @@
+name: Firmware build from your own configuration
+description: Upload your Configuration.h and Configuration_adv.h and get firmware (and updated configs) back
+title: "Build: my configuration"
+labels: [build-request]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Zip your **`Configuration.h`** and **`Configuration_adv.h`** (plus `_Bootscreen.h` / `_Statusscreen.h` if you use them)
+        and drag the zip into the box below. A bot will reply here in a few minutes.
+
+        - Files from an older Marlin are **migrated** to the version you choose: your settings are carried over to that
+          version's files. The reply includes the migrated files and a report of every change, so you can keep using them.
+        - Files from a newer Marlin than the one you choose can't be used. Pick that version or `bugfix-2.1.x`.
+        - **This repository is public. Anyone can download your attached files and the firmware built from them.**
+          Leave out anything private (Wi-Fi passwords, for example).
+  - type: input
+    id: version
+    attributes:
+      label: Marlin version
+      description: "`bugfix-2.1.x` for the latest code, or the latest patch release of a series, such as `2.1.2.10` or `2.0.9.13`."
+      value: bugfix-2.1.x
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Configuration files
+      description: Drag your zip file here, or click below this box to attach it. Wait until the link appears before submitting.
+      placeholder: Drop your .zip here
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Build environment
+      description: PlatformIO environment. Leave blank to use the default for the `MOTHERBOARD` in your `Configuration.h`.
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: Acknowledgement
+      options:
+        - label: I understand my attached files and the firmware built from them will be public.
+          required: true
+        - label: I understand bugfix-2.1.x is updated daily, so it has the latest fixes but may also contain recently introduced bugs, and that older releases don't get fixes.
+          required: true

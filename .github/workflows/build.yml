@@ -2,8 +2,16 @@
 # Build firmware for a "build-request" issue, attach it to the "builds" release,
 # reply with the download link and close the issue.
 #
-# Issue text is untrusted: it only ever reaches scripts through env vars,
-# and is validated (tools/parse_request.py + env list check) before use.
+# Two kinds of request (see tools/parse_request.py):
+#   example  an example from MarlinFirmware/Configurations
+#   upload   the user's own files, attached to the issue as a zip, migrated to the
+#            chosen version if they're from an older Marlin (tools/migrate_user.py)
+#
+# Issue text and attachments are untrusted: they only reach scripts through env vars
+# and files, and are validated (tools/parse_request.py, tools/user_config.py, env list
+# check) before use. Uploaded files may only use plain #define-style preprocessor
+# lines, because a compiler can be told to read files from the build machine. The
+# build job also runs without a token and without credentials on disk.
 #
 name: Build request
 
@@ -28,11 +36,16 @@ jobs:
       issues: write
     outputs:
       ok: ${{ steps.check.outputs.ok }}
+      mode: ${{ steps.parse.outputs.mode }}
       version: ${{ steps.parse.outputs.version }}
       release: ${{ steps.check.outputs.release }}
       config: ${{ steps.parse.outputs.config }}
       env: ${{ steps.check.outputs.env }}
       envs: ${{ steps.check.outputs.envs }}
+      board: ${{ steps.check.outputs.board }}
+      base: ${{ steps.check.outputs.base }}
+      migrated: ${{ steps.check.outputs.migrated }}
+      changes: ${{ steps.check.outputs.changes }}
       marlin_sha: ${{ steps.check.outputs.marlin_sha }}
       configs_sha: ${{ steps.check.outputs.configs_sha }}
       key: ${{ steps.check.outputs.key }}
@@ -44,6 +57,8 @@ jobs:
       AUTHOR: ${{ github.event.issue.user.login }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Parse request
         id: parse
@@ -59,10 +74,12 @@ jobs:
       - name: Validate and look up cache
         id: check
         env:
+          MODE: ${{ steps.parse.outputs.mode }}
           VERSION: ${{ steps.parse.outputs.version }}
           MARLIN_REF: ${{ steps.parse.outputs.marlin_ref }}
           CONFIGS_REF: ${{ steps.parse.outputs.configs_ref }}
           CONFIG: ${{ steps.parse.outputs.config }}
+          UPLOAD: ${{ steps.parse.outputs.upload }}
           REQ_ENV: ${{ steps.parse.outputs.env }}
           OWNER: ${{ github.repository_owner }}
         run: |
@@ -82,26 +99,57 @@ jobs:
           # parse_request.py checked the version and looked up its Marlin tag or branch
           # and its Configurations ref (see tools/versions.py).
           RELEASE=true; [[ $VERSION == bugfix-* ]] && RELEASE=false
+          BASE='' MIGRATED=false CHANGES='' CONFIGS_SHA=''
 
-          # Fetch just enough of both repos to validate the request
-          git clone -q --depth 1 --filter=blob:none --sparse -b "$MARLIN_REF" "https://github.com/$MARLIN_REPO" _marlin \
-            || reject "Sorry, Marlin \`$VERSION\` wasn't found."
-          git -C _marlin sparse-checkout set Marlin/src/pins
-          git clone -q --depth 1 --filter=blob:none --sparse -b "$CONFIGS_REF" "https://github.com/$CONFIGS_REPO" _cfg \
-            || reject "Sorry, there are no example configurations for Marlin \`$VERSION\`."
-          git -C _cfg sparse-checkout set --no-cone "/config/examples/$CONFIG/*"
+          if [[ $MODE == upload ]]; then
+            # Download, unpack and check the user's zip
+            python3 tools/user_config.py fetch "$UPLOAD" _upload > upload.json 2> err.txt \
+              || reject "Sorry, I can't use the attached configuration: $(tail -n1 err.txt)"
 
-          ENVS=$(python3 tools/marlin_index.py envs _marlin _cfg "$CONFIG" 2>&1) \
-            || reject "Sorry, \`$CONFIG\` isn't a configuration I can build for Marlin \`$VERSION\`: $ENVS"
-          [[ -n $ENVS ]] || reject "Sorry, the board used by \`$CONFIG\` has no build environment in Marlin \`$VERSION\`."
+            # Full history (bare, ~300 MB) lets config-migrate.py find the stock files the user started from
+            git clone -q --bare "https://github.com/$MARLIN_REPO" _repo
+            MARLIN_SHA=$(git -C _repo rev-parse "$MARLIN_REF^{commit}") || reject "Sorry, Marlin \`$VERSION\` wasn't found."
+            python3 tools/migrate_user.py _repo "$MARLIN_SHA" _upload _final "$VERSION" > migrate.json 2> err.txt \
+              || reject "Sorry, I can't use the attached configuration: $(tail -n1 err.txt)"
+            for f in _Bootscreen.h _Statusscreen.h; do
+              if [[ -f "_upload/$f" ]]; then cp "_upload/$f" _final/; fi
+            done
+            BASE=$(jq -r .base migrate.json)
+            MIGRATED=$(jq -r .migrated migrate.json)
+            CHANGES=$(jq -r '.counts | to_entries | map("\(.value) \(.key | ascii_downcase | sub(" \\(.*"; ""))") | join(", ")' migrate.json)
+
+            # Build environments for the board in the (migrated) Configuration.h
+            mkdir -p _marlin/Marlin/src/pins
+            git -C _repo show "$MARLIN_SHA:Marlin/src/pins/pins.h" > _marlin/Marlin/src/pins/pins.h
+            ENVS=$(python3 tools/marlin_index.py envs-dir _marlin _final 2>&1) \
+              || reject "Sorry, your configuration can't be built with Marlin \`$VERSION\`: $ENVS"
+            BOARD=$(sed -nE 's/^[[:space:]]*#define[[:space:]]+MOTHERBOARD[[:space:]]+BOARD_([A-Za-z0-9_]+).*/\1/p' _final/Configuration.h | head -n1)
+            [[ -n $ENVS ]] || reject "Sorry, your board \`$BOARD\` has no build environment in Marlin \`$VERSION\`."
+            WHAT="your configuration"
+            TREE=$(cd _final && sha256sum -- * | sha256sum | cut -c1-40)
+          else
+            # Fetch just enough of both repos to validate the request
+            git clone -q --depth 1 --filter=blob:none --sparse -b "$MARLIN_REF" "https://github.com/$MARLIN_REPO" _marlin \
+              || reject "Sorry, Marlin \`$VERSION\` wasn't found."
+            git -C _marlin sparse-checkout set Marlin/src/pins
+            git clone -q --depth 1 --filter=blob:none --sparse -b "$CONFIGS_REF" "https://github.com/$CONFIGS_REPO" _cfg \
+              || reject "Sorry, there are no example configurations for Marlin \`$VERSION\`."
+            git -C _cfg sparse-checkout set --no-cone "/config/examples/$CONFIG/*"
+
+            ENVS=$(python3 tools/marlin_index.py envs _marlin _cfg "$CONFIG" 2>&1) \
+              || reject "Sorry, \`$CONFIG\` isn't a configuration I can build for Marlin \`$VERSION\`: $ENVS"
+            [[ -n $ENVS ]] || reject "Sorry, the board used by \`$CONFIG\` has no build environment in Marlin \`$VERSION\`."
+            BOARD=''
+            WHAT="\`$CONFIG\`"
+            MARLIN_SHA=$(git -C _marlin rev-parse HEAD)
+            CONFIGS_SHA=$(git -C _cfg rev-parse HEAD)
+            TREE=$(git -C _cfg rev-parse "HEAD:config/examples/$CONFIG")
+          fi
 
           ENV=${REQ_ENV:-$(head -n1 <<<"$ENVS")}
           grep -qx -- "$ENV" <<<"$ENVS" \
-            || reject "Sorry, \`$ENV\` isn't a valid environment for \`$CONFIG\`. Valid choices: $(echo $ENVS | sed 's/[^ ]\+/`&`/g')"
+            || reject "Sorry, \`$ENV\` isn't a valid environment for $WHAT. Valid choices: $(echo $ENVS | sed 's/[^ ]\+/`&`/g')"
 
-          MARLIN_SHA=$(git -C _marlin rev-parse HEAD)
-          CONFIGS_SHA=$(git -C _cfg rev-parse HEAD)
-          TREE=$(git -C _cfg rev-parse "HEAD:config/examples/$CONFIG")
           KEY=$(printf '%s\n' "$MARLIN_SHA" "$TREE" "$ENV" | sha256sum | cut -c1-16)
 
           CACHED=false
@@ -112,13 +160,41 @@ jobs:
             echo "release=$RELEASE"
             echo "env=$ENV"
             echo "envs=$(echo $ENVS)"
+            echo "board=$BOARD"
+            echo "base=$BASE"
+            echo "migrated=$MIGRATED"
+            echo "changes=$CHANGES"
             echo "marlin_sha=$MARLIN_SHA"
             echo "configs_sha=$CONFIGS_SHA"
             echo "key=$KEY"
             echo "cached=$CACHED"
           } >> "$GITHUB_OUTPUT"
 
-          [[ $CACHED == true ]] || gh issue comment "$ISSUE" --body "Building \`$CONFIG\` for \`$ENV\` from Marlin \`$VERSION\` (\`${MARLIN_SHA:0:10}\`). This usually takes a few minutes. [Watch the build]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+          if [[ $CACHED != true ]]; then
+            MSG="Building $WHAT for \`$ENV\` from Marlin \`$VERSION\` (\`${MARLIN_SHA:0:10}\`)."
+            if [[ $MODE == upload ]]; then
+              if [[ $MIGRATED == true ]]; then
+                MSG+=" Your files are based on Marlin \`$BASE\`, so I migrated them to \`$VERSION\` ($CHANGES). The migrated files and a report come with the firmware."
+              else
+                MSG+=" Your files match the stock files of \`$VERSION\`, so they're used unchanged."
+              fi
+            fi
+            gh issue comment "$ISSUE" --body "$MSG This usually takes a few minutes. [Watch the build]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+          fi
+
+      - name: Keep the uploaded configuration for the build
+        if: steps.parse.outputs.mode == 'upload' && steps.check.outputs.cached != 'true'
+        run: |
+          mkdir -p userconfig/original
+          cp -R _final userconfig/final
+          cp _upload/* userconfig/original/
+
+      - uses: actions/upload-artifact@v7
+        if: steps.parse.outputs.mode == 'upload' && steps.check.outputs.cached != 'true'
+        with:
+          name: userconfig
+          path: userconfig
+          retention-days: 1
 
   build:
     needs: prepare
@@ -128,10 +204,13 @@ jobs:
     permissions:
       contents: read
     env:
+      MODE: ${{ needs.prepare.outputs.mode }}
       VERSION: ${{ needs.prepare.outputs.version }}
       RELEASE: ${{ needs.prepare.outputs.release }}
       CONFIG: ${{ needs.prepare.outputs.config }}
       PIO_ENV: ${{ needs.prepare.outputs.env }}
+      BASE: ${{ needs.prepare.outputs.base }}
+      MIGRATED: ${{ needs.prepare.outputs.migrated }}
       KEY: ${{ needs.prepare.outputs.key }}
     steps:
       - uses: actions/checkout@v7
@@ -142,12 +221,19 @@ jobs:
           persist-credentials: false
 
       - uses: actions/checkout@v7
+        if: needs.prepare.outputs.mode == 'example'
         with:
           repository: ${{ env.CONFIGS_REPO }}
           ref: ${{ needs.prepare.outputs.configs_sha }}
           path: cfg
           sparse-checkout: config/examples/${{ needs.prepare.outputs.config }}
           persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        if: needs.prepare.outputs.mode == 'upload'
+        with:
+          name: userconfig
+          path: userconfig
 
       - uses: actions/setup-python@v7
         with:
@@ -169,13 +255,30 @@ jobs:
       - name: Apply configuration
         run: |
           mkdir -p out/config
+          if [[ $MODE == upload ]]; then
+            SRC=userconfig/final
+            cp -R userconfig/original out/original
+            if [[ -f $SRC/report.txt ]]; then mv "$SRC/report.txt" out/MIGRATION_REPORT.txt; fi
+          else
+            SRC="cfg/config/examples/$CONFIG"
+          fi
           for f in Configuration.h Configuration_adv.h _Bootscreen.h _Statusscreen.h; do
-            src="cfg/config/examples/$CONFIG/$f"
-            if [[ -f "$src" ]]; then
-              cp "$src" marlin/Marlin/
-              cp "$src" out/config/
+            if [[ -f "$SRC/$f" ]]; then
+              cp "$SRC/$f" marlin/Marlin/
+              cp "$SRC/$f" out/config/
             fi
           done
+
+      - name: Package configuration
+        if: needs.prepare.outputs.mode == 'upload'
+        run: (cd out && zip -r "../config-$KEY.zip" .)
+
+      - uses: actions/upload-artifact@v7
+        if: needs.prepare.outputs.mode == 'upload'
+        with:
+          name: configonly
+          path: config-${{ needs.prepare.outputs.key }}.zip
+          retention-days: 1
 
       - name: Build
         working-directory: marlin
@@ -197,12 +300,22 @@ jobs:
           new bugs. If you find one, please report it to the Marlin project
           with the details in this file."
           fi
+          if [[ $MODE == upload ]]; then
+            if [[ $MIGRATED == true ]]; then
+              SOURCE="Your uploaded files (original/), based on Marlin $BASE,
+                         migrated to $VERSION (config/). See MIGRATION_REPORT.txt."
+            else
+              SOURCE="Your uploaded files, unchanged (config/)"
+            fi
+          else
+            SOURCE="$CONFIG
+          Configurations: https://github.com/$CONFIGS_REPO/tree/${{ needs.prepare.outputs.configs_sha }}/config/examples/${CONFIG// /%20}"
+          fi
           cat > out/BUILD_INFO.txt <<EOF
           Marlin version: $VERSION
-          Configuration: $CONFIG
+          Configuration: $SOURCE
           Environment:   $PIO_ENV
           Marlin:        https://github.com/$MARLIN_REPO/commit/${{ needs.prepare.outputs.marlin_sha }}
-          Configurations: https://github.com/$CONFIGS_REPO/tree/${{ needs.prepare.outputs.configs_sha }}/config/examples/${CONFIG// /%20}
           Built:         $(date -u +'%Y-%m-%d %H:%M UTC')
 
           Copy the firmware file to the printer's SD card without renaming it
@@ -238,11 +351,15 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       ISSUE: ${{ github.event.issue.number }}
+      MODE: ${{ needs.prepare.outputs.mode }}
       VERSION: ${{ needs.prepare.outputs.version }}
       RELEASE: ${{ needs.prepare.outputs.release }}
       CONFIG: ${{ needs.prepare.outputs.config }}
       PIO_ENV: ${{ needs.prepare.outputs.env }}
       ENVS: ${{ needs.prepare.outputs.envs }}
+      BOARD: ${{ needs.prepare.outputs.board }}
+      BASE: ${{ needs.prepare.outputs.base }}
+      MIGRATED: ${{ needs.prepare.outputs.migrated }}
       KEY: ${{ needs.prepare.outputs.key }}
       CACHED: ${{ needs.prepare.outputs.cached }}
       BUILD_RESULT: ${{ needs.build.result }}
@@ -259,12 +376,20 @@ jobs:
           ASSET="build-$KEY.zip"
           URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/builds/$ASSET"
           OTHERS=$(for e in $ENVS; do [[ $e == "$PIO_ENV" ]] || printf '`%s` ' "$e"; done)
+          if [[ $MODE == upload ]]; then
+            WHAT="your configuration (board \`$BOARD\`)"
+          else
+            WHAT="configuration \`$CONFIG\`"
+          fi
+          ensure_release() {
+            gh release view builds >/dev/null 2>&1 || \
+              gh release create builds --prerelease --title "Firmware builds" \
+                --notes "Firmware built on request. Files are removed after a couple of weeks."
+          }
 
           if [[ $CACHED == true || $BUILD_RESULT == success ]]; then
             if [[ $CACHED != true ]]; then
-              gh release view builds >/dev/null 2>&1 || \
-                gh release create builds --prerelease --title "Firmware builds" \
-                  --notes "Firmware built on request. Files are removed after a couple of weeks."
+              ensure_release
               gh release upload builds "$ASSET" --clobber
             fi
             {
@@ -272,8 +397,12 @@ jobs:
               echo
               echo "**[Download $ASSET]($URL)**"
               echo
-              echo "Marlin \`$VERSION\`, configuration \`$CONFIG\`, environment \`$PIO_ENV\`."
+              echo "Marlin \`$VERSION\`, $WHAT, environment \`$PIO_ENV\`."
               echo "The zip holds the firmware file(s), the configuration used and \`BUILD_INFO.txt\`."
+              if [[ $MODE == upload && $MIGRATED == true ]]; then
+                echo "Your files were migrated from Marlin \`$BASE\`: \`config/\` has the migrated files (keep these for next time),"
+                echo "\`original/\` has yours, and \`MIGRATION_REPORT.txt\` lists every change. Check the report before flashing."
+              fi
               echo "Copy the firmware file to the SD card **without renaming it**."
               [[ -n $OTHERS ]] && echo && echo "If this doesn't boot on your board, try another environment: $OTHERS"
               echo
@@ -286,16 +415,30 @@ jobs:
             gh issue comment "$ISSUE" --body-file reply.md
             gh issue close "$ISSUE" --reason completed
           else
+            CFG_ASSET="config-$KEY.zip"
+            if [[ $MODE == upload && -f $CFG_ASSET ]]; then
+              ensure_release
+              gh release upload builds "$CFG_ASSET" --clobber
+            fi
             {
               echo "### :x: Build failed"
               echo
-              if [[ $RELEASE == true ]]; then
+              if [[ $MODE == upload ]]; then
+                echo "Your configuration did not compile for \`$PIO_ENV\` with Marlin \`$VERSION\`."
+                echo "The errors below usually point at the option to fix. Fix it in your files and open a new request."
+                if [[ $MIGRATED == true && -f $CFG_ASSET ]]; then
+                  echo
+                  echo "Your files were migrated from Marlin \`$BASE\`. **[Download the migrated files and report]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/builds/$CFG_ASSET)**,"
+                  echo "fix those, and attach them to your next request so they don't need migrating again."
+                fi
+              elif [[ $RELEASE == true ]]; then
                 echo "\`$CONFIG\` did not compile for \`$PIO_ENV\` with Marlin \`$VERSION\`."
                 echo "Some older example configurations don't build. Try a newer release or bugfix-2.1.x."
+                echo "This is usually a problem in Marlin or the example configuration, not something you did."
               else
                 echo "\`$CONFIG\` did not compile for \`$PIO_ENV\` on today's bugfix-2.1.x."
+                echo "This is usually a problem in Marlin or the example configuration, not something you did."
               fi
-              echo "This is usually a problem in Marlin or the example configuration, not something you did."
               echo
               if [[ -f build.log ]]; then
                 echo '```text'

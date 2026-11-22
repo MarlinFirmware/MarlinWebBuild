@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Marlin Firmware Builder</title>
-<meta name="description" content="Build Marlin firmware from an example configuration, on demand.">
+<meta name="description" content="Build Marlin firmware from an example configuration or your own, on demand.">
 <style>
   :root {
     --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6676;
@@ -67,29 +67,35 @@
   footer { color: var(--muted); font-size: .8rem; margin-top: 24px; overflow-wrap: anywhere; }
   footer code { font-family: var(--mono); }
   label.gap { margin-top: 14px; }
+  label.check { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+  label.check input { width: auto; margin: 0; accent-color: var(--accent); }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <main>
   <h1>Marlin Firmware Builder</h1>
-  <p class="lede">Pick a Marlin version and your printer's example configuration, and get firmware built for it.</p>
+  <p class="lede">Pick a Marlin version and your printer's example configuration (or upload your own), and get firmware built for it.</p>
 
   <div class="grid">
     <section class="panel" aria-labelledby="find-label">
       <label for="ver">Marlin version</label>
       <select id="ver" disabled></select>
       <p class="hint" id="ver-hint"></p>
-      <label id="find-label" for="q" class="gap">Find your printer</label>
-      <input id="q" type="search" placeholder="e.g. ender 3 v422, skr mini, prusa" autocomplete="off" disabled>
-      <div class="count" id="count" aria-live="polite">Loading configurations…</div>
-      <ul class="results" id="results"></ul>
+      <label class="check gap"><input type="checkbox" id="own"> Supply your own configs</label>
+      <div id="examples">
+        <label id="find-label" for="q" class="gap">Find your printer</label>
+        <input id="q" type="search" placeholder="e.g. ender 3 v422, skr mini, prusa" autocomplete="off" disabled>
+        <div class="count" id="count" aria-live="polite">Loading configurations…</div>
+        <ul class="results" id="results"></ul>
+      </div>
     </section>
 
     <section class="panel" id="detail" aria-live="polite">
       <h2>How it works</h2>
       <ol>
         <li>Choose a Marlin version. <b>bugfix-2.1.x</b> has the latest fixes.</li>
-        <li>Search for your printer and select its configuration.</li>
+        <li>Search for your printer and select its configuration, or check <b>Supply your own configs</b> to build from your own files.</li>
         <li>Choose a build environment (the default suits most boards).</li>
         <li>Click <b>Request build</b>. GitHub opens a pre-filled request. Submit it.</li>
         <li>A few minutes later a download link is posted on that request, and GitHub emails you.</li>
@@ -110,11 +116,14 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm = s => s.toLowerCase().replace(/[-_/.()]+/g, ' ');
 
-  // The version and selected config live in the URL (?v=2.1.2.7#Creality/Ender-3/...) so it can be shared
+  // The version and selected config live in the URL (?v=2.1.2.7#Creality/Ender-3/...) so it can be shared.
+  // ?own=1 opens the "own configs" view.
+  const ownMode = () => $('own').checked;
   function saveUrl() {
     const u = new URL(location.href);
     if (data.version === site.default) u.searchParams.delete('v'); else u.searchParams.set('v', data.version);
-    u.hash = selected ? encodeURIComponent(selected.path) : '';
+    if (ownMode()) u.searchParams.set('own', '1'); else u.searchParams.delete('own');
+    u.hash = selected && !ownMode() ? encodeURIComponent(selected.path) : '';
     history.replaceState(null, '', u);
   }
 
@@ -144,6 +153,43 @@
       env,
     });
     return `https://github.com/${site.repo}/issues/new?${p}`;
+  }
+
+  function ownIssueUrl() {
+    const p = new URLSearchParams({
+      template: 'build-upload.yml',
+      title: `Build: my configuration (${data.version})`,
+      version: data.version,
+    });
+    return `https://github.com/${site.repo}/issues/new?${p}`;
+  }
+
+  // "Supply your own configs": the examples list is hidden and the request uses the upload form
+  function showOwn() {
+    const v = esc(data.version);
+    $('detail').innerHTML = `<h2>Build with your own configuration</h2>
+      <ol>
+        <li>Zip your <code>Configuration.h</code> and <code>Configuration_adv.h</code>
+          (and <code>_Bootscreen.h</code> / <code>_Statusscreen.h</code> if you use them).</li>
+        <li>Click <b>Request build</b>. On GitHub, drag the zip into the <b>Configuration files</b> box,
+          wait for its link to appear, and submit.</li>
+        <li>A few minutes later a download link is posted on that request.</li>
+      </ol>
+      <p>Files from an older Marlin are <b>migrated to ${v}</b> first: your settings are carried over to ${v}'s files.
+        The download includes the migrated files and a report of every change. Keep the migrated files for next time.</p>
+      <p>Files from a newer Marlin than ${v} can't be used. Choose that version or <b>bugfix-2.1.x</b>.
+        The build environment is picked from the <code>MOTHERBOARD</code> in your <code>Configuration.h</code>.</p>
+      <div class="warn"><b>Your files will be public.</b> Anyone can download files attached to a request,
+        and the firmware built from them. Leave out anything private, such as Wi-Fi passwords.</div>
+      ${versionNote()}
+      <a class="btn" id="go" target="_blank" rel="noopener" href="${ownIssueUrl()}">Request build on GitHub</a>`;
+  }
+
+  function setOwn(on) {
+    $('own').checked = on;
+    $('examples').hidden = on;
+    if (on) showOwn(); else if (selected) select(selected); else showIntro();
+    saveUrl();
   }
 
   function versionNote() {
@@ -205,8 +251,11 @@
           <a href="https://github.com/${esc(site.repo)}">Source and past builds</a>`;
         $('q').disabled = false;
         const pre = wantPath && data.items.find(it => it.path === wantPath);
-        if (pre) { $('q').value = pre.path; select(pre); }
-        else { selected = null; saveUrl(); showIntro(); render(); }
+        if (pre) { $('q').value = pre.path; selected = pre; }
+        else selected = null;
+        if (ownMode()) { render(); showOwn(); saveUrl(); }
+        else if (pre) select(pre);
+        else { saveUrl(); showIntro(); render(); }
       })
       .catch(e => { $('count').textContent = `Couldn't load the configuration list for ${version} (${e.message}).`; });
   }
@@ -223,10 +272,14 @@
       $('ver').disabled = false;
       $('ver').addEventListener('change', () => loadVersion($('ver').value, selected && selected.path));
       $('q').addEventListener('input', render);
-      const asked = new URL(location.href).searchParams.get('v');
+      $('own').addEventListener('change', () => setOwn($('own').checked));
+      const params = new URL(location.href).searchParams;
+      $('own').checked = params.get('own') === '1';
+      $('examples').hidden = $('own').checked;
+      const asked = params.get('v');
       const has = v => site.versions.some(x => x.version === v);
       const version = has(asked) ? asked : has(site.default) ? site.default : site.versions[0].version;
-      return loadVersion(version, decodeURIComponent(location.hash.slice(1))).then(() => $('q').focus());
+      return loadVersion(version, decodeURIComponent(location.hash.slice(1))).then(() => { if (!ownMode()) $('q').focus(); });
     })
     .catch(e => { $('count').textContent = `Couldn't load the version list (${e.message}).`; });
 })();

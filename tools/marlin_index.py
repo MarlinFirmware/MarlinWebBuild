@@ -4,6 +4,7 @@ Helpers for mapping MarlinFirmware/Configurations examples to PlatformIO envs.
 
   marlin_index.py index <marlin_root> <configs_root>        -> JSON index on stdout
   marlin_index.py envs  <marlin_root> <configs_root> <path>  -> envs, one per line
+  marlin_index.py envs-dir <marlin_root> <config_dir>        -> envs for the board in <config_dir>/Configuration.h
 
 <path> is relative to <configs_root>/config/examples, e.g. "Creality/Ender-3/CrealityV422".
 Env discovery follows Marlin's buildroot/bin/mfenvs (pins.h "env:" comments).
@@ -58,6 +59,10 @@ def main(argv):
             sys.exit(f"Not an example config: {argv[3]}")
         board = board_of(d)
         if not board: sys.exit("No MOTHERBOARD found in Configuration.h")
+        print('\n'.join(envs_for(Path(argv[1]), board)))
+    elif len(argv) == 3 and argv[0] == 'envs-dir':
+        board = board_of(Path(argv[2]))
+        if not board: sys.exit("No `#define MOTHERBOARD BOARD_...` was found in your Configuration.h")
         print('\n'.join(envs_for(Path(argv[1]), board)))
     else:
         sys.exit(__doc__)
