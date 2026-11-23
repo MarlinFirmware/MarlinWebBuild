@@ -14,6 +14,10 @@ them in the firmware we publish. So only these preprocessor directives are allow
 define, undef, if, ifdef, ifndef, elif, else, endif, error, warning, plus the exact
 lines stock files use: "#pragma once" and "#include <avr/pgmspace.h>". Outside of
 comments and strings, token pasting (##), asm and _Pragma are not allowed either.
+
+Each Configuration.h on the import-2.1.x branch of MarlinFirmware/Configurations
+(the repo's default branch, so a common download) has two #error lines that stop
+the build. They're removed, and the summary has "import": true so the user can be told.
 """
 
 import io, json, re, sys, urllib.request, zipfile
@@ -34,6 +38,8 @@ BANNED = [(re.compile(r'##|%:%:'), 'token pasting (##)'),
           (re.compile(r'\b_Pragma\b'), '_Pragma'),
           (re.compile(r'\?\?[=/\'()!<>-]'), 'a trigraph'),
           (re.compile(r'\bincbin\b', re.I), '.incbin')]
+
+IMPORT_ERROR_RE = re.compile(r"""\s*#\s*error\s+"(?:Don't build with import-|Use the 'bugfix\.\.\.' or 'release\.\.\.' configurations)""")
 
 class Rejected(Exception): pass
 
@@ -115,6 +121,14 @@ def check_text(name, text):
 def check_files(files):
     for name, text in files.items(): check_text(name, text)
 
+def strip_import(files):
+    """Remove the import-2.1.x #error lines from Configuration.h. True if there were any."""
+    lines = files.get(REQUIRED_FILE, '').splitlines(keepends=True)
+    kept = [l for l in lines if not IMPORT_ERROR_RE.match(l)]
+    if len(kept) == len(lines): return False
+    files[REQUIRED_FILE] = ''.join(kept)
+    return True
+
 def save(files, out):
     out.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
@@ -125,19 +139,21 @@ def main(argv):
         if len(argv) == 3 and argv[0] == 'fetch':
             files, ignored = unpack(download(argv[1]))
             check_files(files)
+            imported = strip_import(files)
             save(files, Path(argv[2]))
         elif len(argv) == 2 and argv[0] == 'check':
             d = Path(argv[1])
             files = {f: (d / f).read_text(errors='replace') for f in ALLOWED_FILES if (d / f).is_file()}
             ignored = []
             check_files(files)
+            imported = strip_import(files)
         else:
             sys.exit(__doc__)
     except Rejected as e:
         sys.exit(str(e))
     except OSError as e:
         sys.exit(f"The attachment couldn't be downloaded ({e}).")
-    print(json.dumps({'files': sorted(files), 'ignored': ignored[:20]}))
+    print(json.dumps({'files': sorted(files), 'ignored': ignored[:20], 'import': imported}))
 
 if __name__ == '__main__':
     main(sys.argv[1:])

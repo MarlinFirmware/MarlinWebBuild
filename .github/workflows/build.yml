@@ -52,6 +52,7 @@ jobs:
       cached: ${{ steps.check.outputs.cached }}
       prebuilt: ${{ steps.check.outputs.prebuilt }}
       prebuilt_url: ${{ steps.check.outputs.prebuilt_url }}
+      import: ${{ steps.check.outputs.import }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -101,12 +102,13 @@ jobs:
           # parse_request.py checked the version and looked up its Marlin tag or branch
           # and its Configurations ref (see tools/versions.py).
           RELEASE=true; [[ $VERSION == bugfix-* ]] && RELEASE=false
-          BASE='' MIGRATED=false CHANGES='' CONFIGS_SHA=''
+          BASE='' MIGRATED=false CHANGES='' CONFIGS_SHA='' IMPORT=false
 
           if [[ $MODE == upload ]]; then
             # Download, unpack and check the user's zip
             python3 tools/user_config.py fetch "$UPLOAD" _upload > upload.json 2> err.txt \
               || reject "Sorry, I can't use the attached configuration: $(tail -n1 err.txt)"
+            IMPORT=$(jq -r .import upload.json)
 
             # Full history (bare, ~300 MB) lets config-migrate.py find the stock files the user started from
             git clone -q --bare "https://github.com/$MARLIN_REPO" _repo
@@ -184,15 +186,21 @@ jobs:
             echo "cached=$CACHED"
             echo "prebuilt=$PREBUILT"
             echo "prebuilt_url=$PREBUILT_URL"
+            echo "import=$IMPORT"
           } >> "$GITHUB_OUTPUT"
 
           if [[ $CACHED != true && $PREBUILT != true ]]; then
             MSG="Building $WHAT for \`$ENV\` from Marlin \`$VERSION\` (\`${MARLIN_SHA:0:10}\`)."
             if [[ $MODE == upload ]]; then
+              UNCHANGED=unchanged
+              if [[ $IMPORT == true ]]; then
+                MSG+=" Your \`Configuration.h\` came from the \`import-2.1.x\` branch of the Configurations repo, so I removed its two \`#error\` lines. Next time, download from the branch matching your Marlin version, such as \`bugfix-2.1.x\`."
+                UNCHANGED='otherwise unchanged'
+              fi
               if [[ $MIGRATED == true ]]; then
                 MSG+=" Your files are based on Marlin \`$BASE\`, so I migrated them to \`$VERSION\` ($CHANGES). The migrated files and a report come with the firmware."
               else
-                MSG+=" Your files match the stock files of \`$VERSION\`, so they're used unchanged."
+                MSG+=" Your files match the stock files of \`$VERSION\`, so they're used $UNCHANGED."
               fi
             fi
             gh issue comment "$ISSUE" --body "$MSG This usually takes a few minutes. [Watch the build]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
@@ -422,6 +430,7 @@ jobs:
       CACHED: ${{ needs.prepare.outputs.cached }}
       PREBUILT: ${{ needs.prepare.outputs.prebuilt }}
       PREBUILT_URL: ${{ needs.prepare.outputs.prebuilt_url }}
+      IMPORT: ${{ needs.prepare.outputs.import }}
       BUILD_RESULT: ${{ needs.build.result }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -465,6 +474,9 @@ jobs:
               if [[ $MODE == upload && $MIGRATED == true ]]; then
                 echo "Your files were migrated from Marlin \`$BASE\`: \`config/\` has the migrated files (keep these for next time),"
                 echo "\`original/\` has yours, and \`MIGRATION_REPORT.txt\` lists every change. Check the report before flashing."
+              fi
+              if [[ $MODE == upload && $IMPORT == true ]]; then
+                echo "Your \`Configuration.h\` came from the \`import-2.1.x\` branch of the Configurations repo, so I removed its two \`#error\` lines. Next time, download from the branch matching your Marlin version, such as \`bugfix-2.1.x\`."
               fi
               echo "Copy the firmware file to the SD card **without renaming it**."
               [[ -n $OTHERS ]] && echo && echo "If this doesn't boot on your board, try another environment: $OTHERS"
