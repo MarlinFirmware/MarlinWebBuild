@@ -347,7 +347,7 @@ jobs:
       - name: Package
         run: |
           shopt -s nullglob
-          files=(marlin/.pio/build/"$PIO_ENV"/*.{bin,hex,srec,uf2})
+          files=(marlin/.pio/build/"$PIO_ENV"/*.{bin,hex,srec,uf2,cbd})
           (( ${#files[@]} )) || { echo "No firmware files found"; ls -la "marlin/.pio/build/$PIO_ENV"; exit 1; }
           cp "${files[@]}" out/
           if [[ $RELEASE == true ]]; then

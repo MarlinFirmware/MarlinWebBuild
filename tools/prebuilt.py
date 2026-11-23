@@ -27,7 +27,7 @@ from urllib.request import Request, urlopen
 
 REPO = 'MarlinFirmware/MarlinBuilds'
 VERSION_RE = re.compile(r'^\d+\.\d+\.\d+(\.\d+)?$')
-FIRMWARE_RE = re.compile(r'^[A-Za-z0-9_.-]+\.(bin|hex|srec|uf2)$')
+FIRMWARE_RE = re.compile(r'^[A-Za-z0-9_.-]+\.(bin|hex|srec|uf2|cbd)$')
 MAX_ZIP = 8 << 20       # Bytes: firmware zips are well under 1 MB
 MAX_FILE = 16 << 20     # Unpacked bytes
 
