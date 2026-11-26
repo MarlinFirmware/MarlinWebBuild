@@ -77,6 +77,15 @@ def available():
         if not c: continue
         rels.append({'version': tag, 'release': True, 'series': series, 'marlin_ref': tag,
                      'configs_ref': c[0], 'marlin': mar['tags'][tag], 'configs': c[1]})
+    # The newest bugfix-line release has no lts-* branch. latest-<line>.x marks it:
+    # any release tag on the same commit (e.g. 2.1.3 on latest-2.1.x) is offered too.
+    for lat in ('latest-2.1.x',):
+        sha = mar['tags'].get(lat)
+        for tag, tsha in mar['tags'].items():
+            if tsha != sha or not parse(tag) or any(v['version'] == tag for v in rels): continue
+            c = configs_ref(tag, tag, cfg)
+            if c: rels.append({'version': tag, 'release': True, 'series': tag, 'marlin_ref': tag,
+                               'configs_ref': c[0], 'marlin': tsha, 'configs': c[1]})
     return out + sorted(rels, key=lambda v: parse(v['version']), reverse=True)
 
 def refs(version, offered=None):
