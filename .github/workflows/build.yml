@@ -444,6 +444,11 @@ jobs:
         run: |
           ASSET="build-$KEY.zip"
           URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/builds/$ASSET"
+          # marlinfw.org starts the download and shows the Donate section.
+          # It only accepts MarlinFirmware downloads, so forks link directly.
+          if [[ $GITHUB_REPOSITORY == MarlinFirmware/* ]]; then
+            URL="https://marlinfw.org/get-file?url=$(jq -rn --arg url "$URL" '$url|@uri')"
+          fi
           OTHERS=$(for e in $ENVS; do [[ $e == "$PIO_ENV" ]] || printf '`%s` ' "$e"; done)
           if [[ $MODE == upload ]]; then
             WHAT="your configuration (board \`$BOARD\`)"
