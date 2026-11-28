@@ -5,37 +5,73 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Marlin Firmware Builder</title>
 <meta name="description" content="Build Marlin firmware from an example configuration or your own, on demand.">
+<link rel="icon" href="https://marlinfw.org/favicon.ico">
+<script>
+(() => {
+  let scheme;
+  try { scheme = localStorage.getItem('marlin-color-scheme'); } catch (e) {}
+  if (scheme !== 'light' && scheme !== 'dark')
+    scheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.dataset.colorScheme = scheme;
+})();
+</script>
 <style>
+  /* Colors follow marlinfw.org */
   :root {
-    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6676;
-    --border: #d9dde4; --accent: #0b6bcb; --accent-text: #ffffff;
-    --hover: #eef3fa; --sel: #dceafa; --warn-bg: #fff6df; --warn-border: #e8c46a;
+    color-scheme: light;
+    --bg: #eeeeee; --header: #e8e8ec; --brand: #f5f6fa; --panel: #f5f6fa; --field: #ffffff;
+    --text: #000000; --muted: #55525c; --border: #cccccc; --link: #1565c0; --heading: brown;
+    --aux: #1565c0; --btn: #1565c0; --btn-hover: #0f56a8;
+    --hover: #e8e8ec; --sel: #d6e4fa; --warn-bg: #fff6df; --warn-border: #e0b64c;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #12151b; --panel: #1b1f27; --text: #e4e7ec; --muted: #98a1b0;
-      --border: #2e3440; --accent: #4c9be8; --accent-text: #0b1220;
-      --hover: #232a35; --sel: #1f3550; --warn-bg: #2d2615; --warn-border: #7a6224;
-    }
+  :root[data-color-scheme="dark"] {
+    color-scheme: dark;
+    --bg: #27262b; --header: #27262b; --brand: #27262b; --panel: #302d36; --field: #222222;
+    --text: #e6e1e8; --muted: #a9a4b2; --border: #44434d; --link: #5ea1fb; --heading: coral;
+    --aux: #ff8888; --btn: #2448a7; --btn-hover: #2b55c4;
+    --hover: #3a3742; --sel: #25416e; --warn-bg: #3a301b; --warn-border: #7a6224;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
   }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.6rem; margin: 0 0 4px; }
-  .lede { color: var(--muted); margin: 0 0 20px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding-left: 16px; padding-right: 16px; }
+  .skip { position: absolute; left: -9999px; }
+  .skip:focus { left: 8px; top: 8px; z-index: 1; background: var(--field); padding: 6px 10px; border-radius: 4px; }
+  .site-header { background: var(--header); border-bottom: 1px solid var(--border); }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 16px; min-height: 60px; }
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+  .logo { display: block; width: 133px; height: 40px; background: url("https://marlinfw.org/assets/images/logo/marlin/text-day.png") left center / contain no-repeat; }
+  :root[data-color-scheme="dark"] .logo { background-image: url("https://marlinfw.org/assets/images/logo/marlin/text-night.png"); }
+  .aux { display: flex; align-items: center; margin-right: -10px; font-size: .8rem; }
+  .aux a, .aux button {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px;
+    color: var(--aux); text-decoration: none; white-space: nowrap;
+  }
+  .aux button { font: inherit; font-weight: 500; color: var(--text); background: none; border: 0; cursor: pointer; }
+  .aux a:hover, .aux button:hover { background: var(--hover); }
+  .aux svg { width: 15px; height: 15px; fill: currentColor; }
+  .site-nav { border-bottom: 1px solid var(--border); background: var(--brand); }
+  .site-nav ul { display: flex; flex-wrap: wrap; list-style: none; margin-top: 0; margin-bottom: 0; }
+  .site-nav a { display: block; padding: 8px 10px; font-size: .9rem; text-decoration: none; }
+  .site-nav li:first-child a { margin-left: -10px; }
+  .site-nav a:hover { background: var(--hover); }
+  main { padding-top: 24px; padding-bottom: 40px; }
+  h1 { font-size: 2rem; font-weight: 400; line-height: 1.25; color: var(--heading); margin: 0 0 6px; }
+  .lede { color: var(--link); font-size: 1.05rem; font-weight: 600; margin: 0 0 20px; }
+  main.wrap { width: 100%; flex: 1; }
   .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
   @media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
   label { display: block; font-weight: 600; margin-bottom: 6px; }
   input, select {
-    width: 100%; font: inherit; color: var(--text); background: var(--bg);
-    border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px;
+    width: 100%; font: inherit; color: var(--text); background: var(--field);
+    border: 1px solid var(--border); border-radius: 4px; padding: 9px 11px;
   }
-  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input:focus, select:focus { outline: 2px solid var(--link); outline-offset: 1px; }
   .count { color: var(--muted); font-size: .875rem; margin: 8px 0; }
   ul.results { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; border-top: 1px solid var(--border); }
   ul.results li { border-bottom: 1px solid var(--border); }
@@ -43,7 +79,7 @@
     all: unset; display: block; width: 100%; padding: 8px 10px; cursor: pointer; box-sizing: border-box;
   }
   ul.results button:hover { background: var(--hover); }
-  ul.results button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  ul.results button:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
   ul.results button[aria-current="true"] { background: var(--sel); }
   .path { overflow-wrap: anywhere; }
   .board { color: var(--muted); font-size: .8rem; font-family: var(--mono); }
@@ -58,22 +94,68 @@
     padding: 10px 12px; font-size: .9rem; margin: 16px 0;
   }
   .btn {
-    display: inline-block; background: var(--accent); color: var(--accent-text); text-decoration: none;
-    font-weight: 600; padding: 10px 18px; border-radius: 8px;
+    display: inline-block; background: var(--btn); color: #ffffff; text-decoration: none;
+    font-weight: 600; padding: 10px 18px; border-radius: 4px;
   }
+  .btn:hover { background: var(--btn-hover); }
   .btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
-  a { color: var(--accent); }
+  a { color: var(--link); }
   ol { padding-left: 20px; margin: 8px 0 0; }
-  footer { color: var(--muted); font-size: .8rem; margin-top: 24px; overflow-wrap: anywhere; }
+  .site-footer { border-top: 1px solid var(--border); color: var(--muted); font-size: .8rem; padding: 16px 0 24px; overflow-wrap: anywhere; }
+  .site-footer p { margin: 0 0 6px; }
   footer code { font-family: var(--mono); }
   label.gap { margin-top: 14px; }
   label.check { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
-  label.check input { width: auto; margin: 0; accent-color: var(--accent); }
+  label.check input { width: auto; margin: 0; accent-color: var(--btn); }
   [hidden] { display: none !important; }
+  @media (max-width: 480px) {
+    .logo { width: 106px; height: 32px; }
+    .aux .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .site-nav li:first-child a { margin-left: -8px; }
+    .site-nav a { padding: 8px; font-size: .85rem; }
+    h1 { font-size: 1.6rem; }
+  }
+  @media (max-width: 360px) {
+    .logo { width: 90px; height: 28px; }
+    .bar { column-gap: 4px; }
+    .aux a, .aux button { gap: 4px; padding: 0 5px; }
+    .aux { margin-right: -5px; }
+    .site-nav ul { justify-content: space-between; }
+    .site-nav li:first-child a { margin-left: 0; }
+    .site-nav a { padding: 8px 2px; font-size: .8rem; }
+  }
 </style>
 </head>
 <body>
-<main>
+<a class="skip" href="#content">Skip to content</a>
+<header>
+  <div class="site-header">
+    <div class="wrap bar">
+      <a class="brand" href="https://marlinfw.org/" title="Marlin Firmware home">
+        <span class="logo" role="img" aria-label="Marlin Firmware"></span>
+      </a>
+      <div class="aux">
+        <button type="button" id="theme-toggle" title="Toggle dark/light mode">
+          <span id="theme-icon" aria-hidden="true">🌙</span> <span class="label" id="theme-label">Dark</span>
+        </button>
+        <a id="repo" href="https://github.com/MarlinFirmware/MarlinWebBuild" title="This builder on GitHub">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span>GitHub</span></a>
+        <a href="https://marlinfw.org/docs/basics/contributing.html#donate"><span aria-hidden="true">❤️</span> <span>Donate</span></a>
+      </div>
+    </div>
+  </div>
+  <nav class="site-nav" aria-label="Marlin website">
+    <ul class="wrap">
+      <li><a href="https://marlinfw.org/meta/download.html">Download</a></li>
+      <li><a href="https://marlinfw.org/docs/basics/install.html">Build &amp; Install</a></li>
+      <li><a href="https://marlinfw.org/docs/configuration.html">Configuration</a></li>
+      <li><a href="https://marlinfw.org/docs/gcode/">G-code</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main class="wrap" id="content">
   <h1>Marlin Firmware Builder</h1>
   <p class="lede">Pick a Marlin version and your printer's example configuration (or upload your own), and get firmware built for it.</p>
 
@@ -103,9 +185,17 @@
       <p class="hint">You need a free GitHub account to submit a request.</p>
     </section>
   </div>
-
-  <footer id="footer"></footer>
 </main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p id="footer"></p>
+    <p><a href="https://marlinfw.org/">marlinfw.org</a> ·
+      <a href="https://github.com/MarlinFirmware/Marlin">Marlin source</a> ·
+      <a href="https://github.com/MarlinFirmware/Configurations">Configurations</a> ·
+      <a href="https://github.com/MarlinFirmware/Marlin/issues">Report a Marlin bug</a></p>
+  </div>
+</footer>
 
 <script>
 (() => {
@@ -115,6 +205,29 @@
 
   const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm = s => s.toLowerCase().replace(/[-_/.()]+/g, ' ');
+
+  function showScheme() {
+    const dark = document.documentElement.dataset.colorScheme === 'dark';
+    // Like marlinfw.org, the button names the scheme it switches to
+    $('theme-icon').textContent = dark ? '☀️' : '🌙';
+    $('theme-label').textContent = dark ? 'Light' : 'Dark';
+    $('theme-toggle').setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
+  }
+  $('theme-toggle').addEventListener('click', () => {
+    const next = document.documentElement.dataset.colorScheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.colorScheme = next;
+    try { localStorage.setItem('marlin-color-scheme', next); } catch (e) {}
+    showScheme();
+  });
+  // Follow the system setting until the visitor picks a scheme
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+    let saved;
+    try { saved = localStorage.getItem('marlin-color-scheme'); } catch (err) {}
+    if (saved) return;
+    document.documentElement.dataset.colorScheme = e.matches ? 'dark' : 'light';
+    showScheme();
+  });
+  showScheme();
 
   // The version and selected config live in the URL (?v=2.1.2.7#Creality/Ender-3/...) so it can be shared.
   // ?own=1 opens the "own configs" view.
@@ -266,6 +379,7 @@
     .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(j => {
       site = j;
+      $('repo').href = `https://github.com/${site.repo}`;
       const latest = site.versions.find(v => v.release);
       $('ver').innerHTML = site.versions.map(v => `<option value="${esc(v.version)}">${esc(v.version)}${
         !v.release ? ' (latest code)' : v === latest ? ' (latest release)' : ''}</option>`).join('');
