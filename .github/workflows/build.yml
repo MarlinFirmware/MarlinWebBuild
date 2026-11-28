@@ -460,6 +460,20 @@ jobs:
               gh release create builds --prerelease --title "Firmware builds" \
                 --notes "Firmware built on request. Files are removed after a couple of weeks."
           }
+          # Support links from Marlin's .github/FUNDING.yml, as table rows, the same ones its build prints (donate.py)
+          donate_links() {
+            gh api "repos/$MARLIN_REPO/contents/.github/FUNDING.yml" -H "Accept: application/vnd.github.raw" 2>/dev/null |
+            while IFS=: read -r key val; do
+              case $key in
+                github)  label="GitHub Sponsors" url="https://github.com/sponsors/%s" ;;
+                patreon) label="Patreon"         url="https://www.patreon.com/%s" ;;
+                ko_fi)   label="Ko-fi"           url="https://ko-fi.com/%s" ;;
+                custom)  label="Donate"          url="%s" ;;
+                *) continue ;;
+              esac
+              for name in $(tr -d "[]\"' \r" <<<"$val" | tr ',' ' '); do printf "| $label | $url |\n" "$name"; done
+            done
+          }
 
           if [[ $CACHED == true || $PREBUILT == true || $BUILD_RESULT == success ]]; then
             if [[ $CACHED != true ]]; then
@@ -490,6 +504,16 @@ jobs:
                 echo "> Marlin $VERSION is a release and no longer gets fixes. This download expires after about two weeks."
               else
                 echo "> bugfix-2.1.x has the latest fixes, but recent changes can introduce new bugs. This download expires after about two weeks."
+              fi
+              LINKS=$(donate_links || true)
+              if [[ -n $LINKS ]]; then
+                echo
+                echo "---"
+                echo ":heart: Marlin is free and open source, built by volunteers. If you find it useful, please consider supporting its development:"
+                echo
+                echo "| | |"
+                echo "| --- | --- |"
+                echo "$LINKS"
               fi
             } > reply.md
             gh issue comment "$ISSUE" --body-file reply.md
